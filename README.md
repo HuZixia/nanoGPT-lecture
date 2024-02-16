@@ -8,7 +8,7 @@ This nanoGPT-lecture code git, including Andrej Karpathy's nanoGPT, ng-vedio-lec
 3. gpt_dev.ipynb 
 4. and my learning notes
 
-<img src="https://cdn.jsdelivr.net/gh/HuZixia/CloudGo/pictures/resources/nanoGPT/nanoGPTdir.png" style="margin-left: 0px" width="800px">
+<img src="https://cdn.jsdelivr.net/gh/HuZixia/CloudGo/pictures/resources/nanoGPT/nanoGPTgit.png" style="margin-left: 0px" width="800px">
 
 
 **The GPT demo model introduction as follows:**
@@ -21,4 +21,4 @@ This nanoGPT-lecture code git, including Andrej Karpathy's nanoGPT, ng-vedio-lec
 <img src="https://cdn.jsdelivr.net/gh/HuZixia/CloudGo/pictures/resources/nanoGPT/nanoGPT.png" style="margin-left: 0px" width="800px">
 
 
-Welcome to like and follow.
+Welcome to like and follow. 
