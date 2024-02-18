@@ -46,6 +46,8 @@ print(f"train has {len(train_ids):,} tokens")
 print(f"val has {len(val_ids):,} tokens")
 
 # export to bin files
+# 将 train_ids 和 val_ids 两个数组保存到磁盘上。tofile 方法将数组中的数据以二进制格式写入文件。
+# 文件的路径是当前文件所在的目录加上文件名，文件名分别为 'train.bin' 和 'val.bin'。
 train_ids = np.array(train_ids, dtype=np.uint16)
 val_ids = np.array(val_ids, dtype=np.uint16)
 train_ids.tofile(os.path.join(os.path.dirname(__file__), 'train.bin'))

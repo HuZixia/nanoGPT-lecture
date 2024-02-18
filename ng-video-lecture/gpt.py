@@ -19,7 +19,7 @@ dropout = 0.2
 torch.manual_seed(1337)
 
 # wget https://raw.githubusercontent.com/karpathy/char-rnn/master/data/tinyshakespeare/input.txt
-with open('input.txt', 'r', encoding='utf-8') as f:
+with open('./input.txt', 'r', encoding='utf-8') as f:
     text = f.read()
 
 # here are all the unique characters that occur in this text
@@ -61,6 +61,7 @@ def estimate_loss():
     model.train()
     return out
 
+# 1. 模型Head定义
 class Head(nn.Module):
     """ one head of self-attention """
 
@@ -89,6 +90,7 @@ class Head(nn.Module):
         out = wei @ v # (B, T, T) @ (B, T, hs) -> (B, T, hs)
         return out
 
+# 2. 模型MultiHeadAttention定义
 class MultiHeadAttention(nn.Module):
     """ multiple heads of self-attention in parallel """
 
@@ -103,6 +105,7 @@ class MultiHeadAttention(nn.Module):
         out = self.dropout(self.proj(out))
         return out
 
+# 3. 模型FeedFoward定义
 class FeedFoward(nn.Module):
     """ a simple linear layer followed by a non-linearity """
 
@@ -118,6 +121,7 @@ class FeedFoward(nn.Module):
     def forward(self, x):
         return self.net(x)
 
+# 4. 模型Block定义
 class Block(nn.Module):
     """ Transformer block: communication followed by computation """
 
@@ -135,6 +139,7 @@ class Block(nn.Module):
         x = x + self.ffwd(self.ln2(x))
         return x
 
+# 5. 模型GPTLanguageModel定义
 class GPTLanguageModel(nn.Module):
 
     def __init__(self):
@@ -149,11 +154,14 @@ class GPTLanguageModel(nn.Module):
         # better init, not covered in the original GPT video, but important, will cover in followup video
         self.apply(self._init_weights)
 
+    # 初始化神经网络模块的权重
     def _init_weights(self, module):
+        # 如果 module 是 nn.Linear 类型（即全连接层），那么它的权重将被初始化为均值为 0，标准差为 0.02 的正态分布。如果全连接层有偏置项 (bias)，那么偏置项将被初始化为 0。
         if isinstance(module, nn.Linear):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
             if module.bias is not None:
                 torch.nn.init.zeros_(module.bias)
+        # 如果 module 是 nn.Embedding 类型（即嵌入层），那么它的权重也将被初始化为均值为 0，标准差为 0.02 的正态分布。
         elif isinstance(module, nn.Embedding):
             torch.nn.init.normal_(module.weight, mean=0.0, std=0.02)
 

@@ -33,14 +33,16 @@ class CausalSelfAttention(nn.Module):
         # 由于这个代码使用的是将embedding切分成n_head份实现multi head，因此需要n_head的大小整除embedding的大小
         assert config.n_embd % config.n_head == 0
         # key, query, value projections for all heads, but in a batch
+        # 定义了一个线性层 self.c_attn，用于计算注意力机制中的键、值和查询
         self.c_attn = nn.Linear(config.n_embd, 3 * config.n_embd, bias=config.bias)
         # output projection
+        # 定义了一个线性层 self.c_proj，用于将多头注意力机制的输出映射到原始的维度
         self.c_proj = nn.Linear(config.n_embd, config.n_embd, bias=config.bias)
         # regularization
         self.attn_dropout = nn.Dropout(config.dropout)
         self.resid_dropout = nn.Dropout(config.dropout)
         self.n_head = config.n_head
-        self.n_embd = config.n_embd
+        self.n_emd = config.n_embd
         self.dropout = config.dropout
         # flash attention make GPU go brrrrr but support is only in PyTorch >= 2.0
         self.flash = hasattr(torch.nn.functional, 'scaled_dot_product_attention')
@@ -92,6 +94,7 @@ class CausalSelfAttention(nn.Module):
         y = self.resid_dropout(self.c_proj(y))
         return y
 
+# 定义一个多层感知机（MLP），可以将输入数据映射到一个更高维的空间，然后通过非线性激活函数和 Dropout 层，再映射回原来的维度，得到最终的输出。
 class MLP(nn.Module):
 
     def __init__(self, config):
@@ -135,6 +138,7 @@ class GPTConfig:
     dropout: float = 0.0
     bias: bool = True # True: bias in Linears and LayerNorms, like GPT-2. False: a bit better and faster
 
+
 class GPT(nn.Module):
     # __init__部分中实现了input和output的embedding的参数共享。
     # 具体来说，wte的weight是一个大小为(vocab_size, embedding_size)大小的矩阵，而Linear层的weight就是A矩阵，
@@ -152,12 +156,15 @@ class GPT(nn.Module):
         # h：一个ModuleList，包含了n_layer个Block，实现transformer中的多层的结构
         # ln_f：一个layernorm层，进行归一化
         self.transformer = nn.ModuleDict(dict(
+            # wte的weight是一个大小为(vocab_size, embedding_size)大小的矩阵
             wte = nn.Embedding(config.vocab_size, config.n_embd),
             wpe = nn.Embedding(config.block_size, config.n_embd),
             drop = nn.Dropout(config.dropout),
             h = nn.ModuleList([Block(config) for _ in range(config.n_layer)]),
             ln_f = LayerNorm(config.n_embd, bias=config.bias),
         ))
+        # self.lm_head 是一个线性层，输入大小为 config.n_embd，输出大小为 config.vocab_size。这个线性层用于将 Transformer 的输出转换为预测的单词。
+        # 这里lm_head的weight是一个大小为(vocab_size, embedding_size)大小的矩阵
         self.lm_head = nn.Linear(config.n_embd, config.vocab_size, bias=False)
         # with weight tying when using torch.compile() some warnings get generated:
         # "UserWarning: functional_call was passed multiple values for tied weights.
@@ -170,7 +177,8 @@ class GPT(nn.Module):
         self.apply(self._init_weights)
         # apply special scaled init to the residual projections, per GPT-2 paper
         for pn, p in self.named_parameters():
-            if pn.endswith('c_proj.weight'):
+            if pn.endswith('c_proj.weight'): # 'c_proj.weight' 是残差投影的权重参数。
+                # 将参数的值初始化为一个正态分布，均值为 0.0，标准差为 0.02/math.sqrt(2 * config.n_layer)。
                 torch.nn.init.normal_(p, mean=0.0, std=0.02/math.sqrt(2 * config.n_layer))
 
         # report number of parameters
@@ -230,6 +238,7 @@ class GPT(nn.Module):
 
     # 减少block size的，因为from pretrained的GPT默认block size为1024，这个函数可以减少block size，
     # 目前的block size只在self attention的mask矩阵bias，wpe中用到，所以只用改这几个位置。
+    # "block size" 是指模型处理的输入序列的最大长度。它的作用是限制输入序列的长度，以确保模型的计算效率和内存使用在可接受的范围内。
     def crop_block_size(self, block_size):
         # model surgery to decrease the block size if necessary
         # e.g. we may load the GPT2 pretrained model checkpoint (block size 1024)
@@ -313,8 +322,7 @@ class GPT(nn.Module):
         return model
 
     # 配置并返回optimizer，指定在一些权重上衰减或者不衰减。
-    # 权重衰减（weight
-    # decay）是一种正则化技巧，主要用于防止过拟合。在训练过程中，权重衰减会使得模型的权重变得更小，从而减少模型的复杂度。
+    # 权重衰减（weight decay）是一种正则化技巧，主要用于防止过拟合。在训练过程中，权重衰减会使得模型的权重变得更小，从而减少模型的复杂度。
     # 在这个代码中，作者将模型中的参数分为两组，一组是需要权重衰减的参数，另一组是不需要权重衰减的参数。参数的分组依据是：
     # 偏置项（bias）参数不需要权重衰减，因为偏置项不参与计算，而且往往很小，所以不需要权重衰减来降低其复杂度。
     # 层归一化（LayerNorm）权重参数也不需要权重衰减，因为它的作用是对输入数据进行标准化，不会对模型的复杂度产生影响。
@@ -348,6 +356,7 @@ class GPT(nn.Module):
 
     def estimate_mfu(self, fwdbwd_per_iter, dt):
         """ estimate model flops utilization (MFU) in units of A100 bfloat16 peak FLOPS """
+        # 估计模型的浮点运算利用率（Model Flops Utilization，简称 MFU）。MFU 是以 A100 GPU 的 bfloat16 峰值浮点运算次数（FLOPS）为单位的。
         # first estimate the number of flops we do per iteration.
         # see PaLM paper Appendix B as ref: https://arxiv.org/abs/2204.02311
         N = self.get_num_params()
@@ -372,6 +381,7 @@ class GPT(nn.Module):
         # 生成max_new_tokens次
         for _ in range(max_new_tokens):
             # 如果目前序列的长度超过了block size，就切割后block size大小的序列来生成，用滑动窗口的方式控制长度
+            # 处理索引 idx 时，根据其第二维的大小与配置中的 block_size 进行比较，然后选择相应的索引。
             # if the sequence context is growing too long we must crop it at block_size
             idx_cond = idx if idx.size(1) <= self.config.block_size else idx[:, -self.config.block_size:]
             # 经过forward函数，得到logits，此时logits的shape是(batch_size, 1, vocab_size)

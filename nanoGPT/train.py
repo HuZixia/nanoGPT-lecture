@@ -103,6 +103,7 @@ if ddp:
     seed_offset = ddp_rank  # each process gets a different seed
     # world_size number of processes will be training simultaneously, so we can scale
     # down the desired gradient accumulation iterations per process proportionally
+    # 在分布式训练中，按比例减少每个进程的梯度累积迭代次数，以便在所有进程中均匀分配计算负载。
     assert gradient_accumulation_steps % ddp_world_size == 0
     gradient_accumulation_steps //= ddp_world_size
 else:
@@ -125,8 +126,7 @@ device_type = 'cuda' if 'cuda' in device else 'cpu'  # for later use in torch.au
 # note: float16 data type will automatically use a GradScaler
 # 根据 dtype 参数的值设置 PyTorch 的数据类型。
 ptdtype = {'float32': torch.float32, 'bfloat16': torch.bfloat16, 'float16': torch.float16}[dtype]
-# 如果程序正在运行在 CPU 上，那么使用 nullcontext()；如果程序正在运行在 GPU 上，
-# 那么使用 torch.amp.autocast 函数，并设置相应的设备类型和数据类型。
+# 如果程序正在运行在 CPU 上，那么使用 nullcontext()；如果程序正在运行在 GPU 上，那么使用 torch.amp.autocast 函数，并设置相应的设备类型和数据类型。
 ctx = nullcontext() if device_type == 'cpu' else torch.amp.autocast(device_type=device_type, dtype=ptdtype)
 # nullcontext() 是 PyTorch 的一个函数，用于在 CPU 上运行程序时返回一个空的上下文。这样做的目的是为了避免在 CPU 上使用 autocast 函数导致的额外计算负担。
 # torch.amp.autocast 函数是 PyTorch 的一个自动混合精度计算函数。它可以在运行时自动地切换数据类型，以便在需要时使用高精度，并在不需要时使用低精度。这可以提高程序的运行效率。
@@ -176,6 +176,7 @@ if init_from == 'scratch':
     model_args['vocab_size'] = meta_vocab_size if meta_vocab_size is not None else 50304
     gptconf = GPTConfig(**model_args)
     model = GPT(gptconf)
+
 # 从checkpoint中恢复模型
 elif init_from == 'resume':
     print(f"Resuming training from {out_dir}")
@@ -192,10 +193,13 @@ elif init_from == 'resume':
     gptconf = GPTConfig(**model_args)
     model = GPT(gptconf)
     state_dict = checkpoint['model']
+
     # 这段代码是在修复checkpoint中的state_dict的key。
     # 在某些情况下，state_dict的key会带有一个"_orig_mod."的前缀，
-    # 这段代码就是在遍历state_dict的所有键值对，如果键值对的键以"_orig_mod."开头，
-    # 那么就将这个键值对的键去掉"_orig_mod."前缀，并将这个键值对从state_dict中移除。
+    # 这段代码就是在遍历state_dict的所有键值对
+    # 如果某个键的前缀是 unwanted_prefix，那么就将这个键值对从 state_dict 中移除，并添加一个新的键值对，新的键是原键去掉 unwanted_prefix 后的部分，值不变。
+    # state_dict.pop(k) 会从 state_dict 中移除键为 k 的项，并返回其值。
+    # state_dict[k[len(unwanted_prefix):]] = state_dict.pop(k) 就是在 state_dict 中添加一个新的键值对，新的键是 k[len(unwanted_prefix):]，值是 state_dict.pop(k)。
 
     # fix the keys of the state dictionary :(
     # honestly no idea how checkpoints sometimes get this prefix, have to debug more
@@ -206,6 +210,7 @@ elif init_from == 'resume':
     model.load_state_dict(state_dict)
     iter_num = checkpoint['iter_num']
     best_val_loss = checkpoint['best_val_loss']
+
 # 用openAI的weight
 elif init_from.startswith('gpt2'):
     print(f"Initializing from OpenAI GPT-2 weights: {init_from}")
@@ -244,16 +249,20 @@ if ddp:
 
 
 # helps estimate an arbitrarily accurate loss over either split using many batches
+# @torch.no_grad() 装饰器声明这个函数不需要计算梯度，这样可以节省计算资源，因为在评估模型时通常不需要计算梯度。
 @torch.no_grad()
 def estimate_loss():
     out = {}
+    # 模型设置为评估模式，这是因为在评估模型时，我们不需要使用到如 Dropout 等只在训练模式下才会使用的层。
     model.eval()
     for split in ['train', 'val']:
+        # 创建一个全零的张量 losses，用于存储每个批次的损失
         losses = torch.zeros(eval_iters)
         for k in range(eval_iters):
             X, Y = get_batch(split)
             with ctx:
                 logits, loss = model(X, Y)
+            # 将计算得到的损失添加到 losses 张量中。最后，计算 losses 张量的均值，并将结果存储到 out 字典中。
             losses[k] = loss.item()
         out[split] = losses.mean()
     model.train()
@@ -276,10 +285,12 @@ def get_lr(it):
         return min_lr
     # 3) 在这之间，使用余弦衰减，最终值为最小学习率min_lr。
     # 3) in between, use cosine decay down to min learning rate
+    # 用余弦衰减策略计算学习率。首先，计算衰减比例 decay_ratio，然后计算余弦衰减系数 coeff，最后根据 min_lr、coeff 和 learning_rate 计算学习率。
     decay_ratio = (it - warmup_iters) / (lr_decay_iters - warmup_iters)
     assert 0 <= decay_ratio <= 1
     coeff = 0.5 * (1.0 + math.cos(math.pi * decay_ratio))  # coeff ranges 0..1
     return min_lr + coeff * (learning_rate - min_lr)
+
 
 
 # 下面这一块是log相关的部分，代码中用到的工具是wandb，一个类似tensorboard的可视化工具，使用的方法就是用init初始化project，把需要记录的log用log的函数记录。
@@ -335,7 +346,7 @@ while True:
     if iter_num == 0 and eval_only:
         break
 
-    # 可以通过对gradient_accumulation_steps的设置模拟更大 batch size
+    # 可以通过对 gradient_accumulation_steps 的设置模拟更大 batch size
     # forward backward update, with optional gradient accumulation to simulate larger batch size
     # and using the GradScaler if data type is float16
     for micro_step in range(gradient_accumulation_steps):
@@ -355,6 +366,7 @@ while True:
         # backward pass, with gradient scaling if training in fp16
         scaler.scale(loss).backward()
     # clip the gradient
+    # 在训练神经网络时对梯度进行裁剪，以防止梯度爆炸的问题。
     if grad_clip != 0.0:
         scaler.unscale_(optimizer)
         torch.nn.utils.clip_grad_norm_(model.parameters(), grad_clip)
@@ -362,6 +374,9 @@ while True:
     scaler.step(optimizer)
     scaler.update()
     # flush the gradients as soon as we can, no need for this memory anymore
+    # 代码调用 optimizer.zero_grad(set_to_none=True) 来清零优化器中的梯度。
+    # 这是因为在 PyTorch 中，梯度是累积的，如果不清零，那么每次计算梯度时，新的梯度会被加到旧的梯度上，导致结果错误。
+    # 参数 set_to_none=True 表示将梯度张量的数据直接设为 None，这样可以更早地释放梯度占用的内存。
     optimizer.zero_grad(set_to_none=True)
 
     # 计算时间并且记录日志
@@ -372,8 +387,12 @@ while True:
     if iter_num % log_interval == 0 and master_process:
         # get loss as float. note: this is a CPU-GPU sync point
         # scale up to undo the division above, approximating the true total loss (exact would have been a sum)
+        # loss.item() 来获取损失值，并乘以 gradient_accumulation_steps 来得到总的损失值。
+        # 这是因为在计算损失时，可能会对损失进行平均，所以在记录损失时，需要将其缩放回原来的总损失。
         lossf = loss.item() * gradient_accumulation_steps
         if local_iter_num >= 5:  # let the training loop settle a bit
+            # estimate model flops utilization (MFU) in units of A100 bfloat16 peak FLOPS。
+            # 然后，使用一个滑动平均的方式来更新 running_mfu。
             mfu = raw_model.estimate_mfu(batch_size * gradient_accumulation_steps, dt)
             running_mfu = mfu if running_mfu == -1.0 else 0.9 * running_mfu + 0.1 * mfu
         print(f"iter {iter_num}: loss {lossf:.4f}, time {dt * 1000:.2f}ms, mfu {running_mfu * 100:.2f}%")
@@ -386,7 +405,7 @@ while True:
         break
 
 # STEP 5：最后，调用了destroy_process_group()来销毁进程组
-# 除此之外，如果是当前的process是master_process，还需要执行创建output dir，初始化wandb，记录log，计算loss，保存checkpoint。
+# 注意，如果是当前的process是master_process，还需要执行创建output dir，初始化wandb，记录log，计算loss，保存checkpoint。
 if ddp:
     destroy_process_group()
 
