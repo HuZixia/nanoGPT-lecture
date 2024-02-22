@@ -18,7 +18,7 @@ This nanoGPT-lecture code git, including Andrej Karpathy's nanoGPT, ng-vedio-lec
 4. train & predict
 
 
-<img src="https://cdn.jsdelivr.net/gh/HuZixia/CloudGo/pictures/resources/nanoGPT/nanoGPT.png" style="margin-left: 0px" width="800px">
+<img src="https://cdn.jsdelivr.net/gh/HuZixia/CloudGo/pictures/resources/nanoGPT/nanoGPT_new.png" style="margin-left: 0px" width="800px">
 
 
 Welcome to like and follow. 
